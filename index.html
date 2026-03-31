@@ -450,6 +450,41 @@
   .result-preview.open { display: block; }
   .rp-title { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 5px; }
 
+  /* PROMPT BOX */
+  .prompt-desc {
+    font-size: 12px;
+    color: var(--text-mid);
+    line-height: 1.6;
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    background: rgba(200,169,110,0.07);
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(200,169,110,0.2);
+  }
+
+  .prompt-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11.5px;
+    line-height: 1.8;
+    color: var(--text-mid);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 340px;
+    overflow-y: auto;
+    margin-bottom: 14px;
+    user-select: text;
+  }
+
+  .prompt-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
   /* TOAST */
   #toast {
     position: fixed;
@@ -576,27 +611,29 @@
 
     <div id="progress-area">
       <div class="progress-step" id="step-transcribe"><div class="step-icon">1</div><span>Transcrevendo o áudio com Gemini...</span></div>
-      <div class="progress-step" id="step-research"><div class="step-icon">2</div><span>Pesquisando referências e estudos...</span></div>
-      <div class="progress-step" id="step-organize"><div class="step-icon">3</div><span>Organizando anotações por tópico...</span></div>
+      <div class="progress-step" id="step-prompt"><div class="step-icon">2</div><span>Gerando prompt para Deep Research...</span></div>
     </div>
 
     <div id="results-area">
       <button class="btn btn-ghost" id="new-btn" onclick="resetAll()">← Nova gravação</button>
+
+      <!-- Transcrição -->
       <div class="result-section">
         <div class="result-header" onclick="toggleSection('transcript')"><span>📝</span><span class="result-header-title">Transcrição</span><span class="result-toggle" id="toggle-transcript">▼</span></div>
         <div class="result-body" id="body-transcript"><div class="transcript-text" id="transcript-content"></div></div>
       </div>
+
+      <!-- Prompt Deep Research -->
       <div class="result-section">
-        <div class="result-header" onclick="toggleSection('topics')"><span>🗂</span><span class="result-header-title">Anotações por tópico</span><span class="result-toggle" id="toggle-topics">▼</span></div>
-        <div class="result-body open" id="body-topics"><div class="topics-grid" id="topics-content"></div></div>
-      </div>
-      <div class="result-section">
-        <div class="result-header" onclick="toggleSection('refs')"><span>📚</span><span class="result-header-title">Referências e fontes</span><span class="result-toggle" id="toggle-refs">▼</span></div>
-        <div class="result-body open" id="body-refs"><div class="refs-list" id="refs-content"></div></div>
-      </div>
-      <div class="result-section">
-        <div class="result-header" onclick="toggleSection('studies')"><span>🔬</span><span class="result-header-title">Estudos e artigos relacionados</span><span class="result-toggle" id="toggle-studies">▼</span></div>
-        <div class="result-body open" id="body-studies"><div class="refs-list" id="studies-content"></div></div>
+        <div class="result-header" onclick="toggleSection('prompt')"><span>🔬</span><span class="result-header-title">Prompt para Deep Research</span><span class="result-toggle open" id="toggle-prompt">▼</span></div>
+        <div class="result-body open" id="body-prompt">
+          <div class="prompt-desc">Cole este prompt no <strong>Gemini Deep Research</strong> para obter referências, estudos e análises aprofundadas sobre o que você falou.</div>
+          <div class="prompt-box" id="prompt-content"></div>
+          <div class="prompt-actions">
+            <button class="btn btn-accent" id="copy-btn" onclick="copyPrompt()">📋 Copiar prompt</button>
+            <a class="btn btn-ghost" href="https://gemini.google.com/app" target="_blank">↗ Abrir Gemini</a>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -953,12 +990,14 @@ function buildAudioItem(rec) {
   // result preview
   let previewHtml = '';
   if (rec.result) {
-    const topics = (rec.result.topics||[]).slice(0,3).map(t=>`<strong>${escHtml(t.name)}</strong>`).join(' · ');
-    const tr = rec.result.transcript ? rec.result.transcript.slice(0,180) + (rec.result.transcript.length>180?'…':'') : '';
+    const tr = rec.result.transcript ? rec.result.transcript.slice(0,200) + (rec.result.transcript.length>200?'…':'') : '';
+    const pr = rec.result.prompt ? rec.result.prompt.slice(0,120) + '…' : '';
     previewHtml = `
       <div class="result-preview" id="preview-${rec.id}">
-        ${tr ? `<div class="rp-title">Transcrição</div><div style="font-style:italic;color:var(--text-mid);margin-bottom:9px">${escHtml(tr)}</div>` : ''}
-        ${topics ? `<div class="rp-title">Tópicos principais</div><div style="font-size:12px">${topics}</div>` : ''}
+        ${tr ? `<div class="rp-title">Transcrição</div><div style="font-style:italic;color:var(--text-mid);margin-bottom:9px;font-size:12px">${escHtml(tr)}</div>` : ''}
+        ${pr ? `<div class="rp-title">Prompt Deep Research</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">${escHtml(pr)}</div>
+          <button class="btn btn-accent btn-sm" onclick="copyPromptById(${rec.id})">📋 Copiar prompt</button>` : ''}
       </div>`;
   }
 
@@ -1049,11 +1088,11 @@ async function processOne(id) {
 
   try {
     const transcript = await transcribeWithGemini(rec.blob, rec.mimeType);
-    const research   = await researchWithGemini(transcript, rec.context || '');
+    const prompt     = generateDeepResearchPrompt(transcript, rec.context || '');
     rec.status = 'done';
-    rec.result = { transcript, ...research };
+    rec.result = { transcript, prompt };
     await dbPut(rec);
-    showToast(`✓ "${rec.label.slice(0,30)}" analisado!`);
+    showToast(`✓ "${rec.label.slice(0,30)}" transcrito!`);
   } catch(e) {
     rec.status = 'pending';
     await dbPut(rec);
@@ -1101,15 +1140,13 @@ async function analyze() {
     const transcript = await transcribeWithGemini(audioBlob, audioBlob.type);
     setStep('step-transcribe','done');
 
-    setStep('step-research','active');
-    const research = await researchWithGemini(transcript, document.getElementById('context-input').value.trim());
-    setStep('step-research','done');
+    setStep('step-prompt','active');
+    const context = document.getElementById('context-input').value.trim();
+    const prompt  = generateDeepResearchPrompt(transcript, context);
+    await sleep(300);
+    setStep('step-prompt','done');
 
-    setStep('step-organize','active');
-    await sleep(400);
-    setStep('step-organize','done');
-
-    renderResults(transcript, research);
+    renderResults(transcript, prompt);
   } catch(e) {
     document.getElementById('progress-area').style.display = 'none';
     document.getElementById('context-card').style.display = 'block';
@@ -1134,39 +1171,40 @@ async function transcribeWithGemini(blob, mimeType) {
   return geminiRequest('gemini-2.5-flash', body);
 }
 
-async function researchWithGemini(transcript, extraContext) {
-  const body = {
-    contents: [{ parts: [{ text: `Você é um pesquisador acadêmico e assistente intelectual.
+function generateDeepResearchPrompt(transcript, extraContext) {
+  const ctx = extraContext ? `\n\nContexto adicional fornecido pelo autor: ${extraContext}` : '';
+  return `Você é um pesquisador acadêmico sênior especializado em pesquisa aprofundada e síntese de conhecimento.
 
-Transcrição do áudio:
+Recebi a seguinte transcrição de um áudio pessoal de reflexões e ideias:
+
 ---
 ${transcript}
----
-${extraContext ? `Contexto adicional: ${extraContext}\n---` : ''}
+---${ctx}
 
-Produza uma análise COMPLETA no seguinte formato JSON (responda APENAS com o JSON, sem markdown, sem backticks):
+Com base neste conteúdo, realize uma PESQUISA APROFUNDADA e entregue:
 
-{
-  "topics": [
-    { "name": "Nome do tópico", "note": "Anotação detalhada com insights e conexões relevantes" }
-  ],
-  "references": [
-    { "type": "Livro|Site|Artigo|Vídeo|Podcast|Pessoa", "title": "Título ou nome", "description": "Por que é relevante", "url": "URL real ou null" }
-  ],
-  "studies": [
-    { "type": "Estudo|Pesquisa|Teoria|Artigo científico", "title": "Título", "description": "Resumo e relevância", "url": "URL real ou null" }
-  ]
-}
+## 1. Tópicos centrais identificados
+Liste e explique os temas, conceitos e questões principais que aparecem na fala.
 
-Regras: 3–7 tópicos · 4–8 referências reais · 3–6 estudos reais · Priorize fontes em português · Títulos e descrições em português brasileiro · URLs reais ou null.` }]}],
-    generationConfig: { temperature: 0.4, maxOutputTokens: 4096 }
-  };
+## 2. Contexto e panorama atual
+O que a literatura, ciência e debate contemporâneo dizem sobre esses temas? Inclua desenvolvimentos recentes.
 
-  const raw = await geminiRequest('gemini-2.5-pro', body);
-  const cleaned = raw.replace(/```json|```/g,'').trim();
-  const s = cleaned.indexOf('{'); const e = cleaned.lastIndexOf('}');
-  if (s === -1 || e === -1) throw new Error('Resposta do Gemini sem JSON válido');
-  return JSON.parse(cleaned.slice(s, e+1));
+## 3. Referências fundamentais
+Livros, artigos, autores e obras clássicas e contemporâneas diretamente relevantes ao que foi discutido. Para cada um: título, autor, por que é relevante.
+
+## 4. Estudos e evidências científicas
+Pesquisas acadêmicas, meta-análises, experimentos ou dados empíricos que se relacionam com os temas. Inclua DOI ou fonte quando possível.
+
+## 5. Perspectivas e escolas de pensamento
+Quais são as principais correntes de pensamento, debates ou controvérsias em torno desses temas?
+
+## 6. Conexões interdisciplinares
+Que outras áreas do conhecimento (filosofia, neurociência, sociologia, história, espiritualidade, etc.) dialogam com o que foi dito?
+
+## 7. Sugestões de aprofundamento
+Indique próximos passos práticos de leitura, estudo ou investigação para quem quer se aprofundar nesses temas.
+
+Priorize fontes em português brasileiro quando disponíveis. Seja específico, cite autores reais e obras verificáveis.`;
 }
 
 async function geminiRequest(model, body) {
@@ -1190,7 +1228,7 @@ function showProgress() {
   document.getElementById('results-area').style.display = 'none';
   document.getElementById('analyze-btn').style.display = 'none';
   document.getElementById('context-card').style.display = 'none';
-  ['step-transcribe','step-research','step-organize'].forEach((id,i) => {
+  ['step-transcribe','step-prompt'].forEach((id,i) => {
     const el = document.getElementById(id);
     el.dataset.num = i+1;
     el.querySelector('.step-icon').textContent = i+1;
@@ -1210,35 +1248,50 @@ function toggleSection(id) {
   document.getElementById('toggle-'+id).classList.toggle('open');
 }
 
-function renderResults(transcript, research) {
+function renderResults(transcript, prompt) {
   document.getElementById('progress-area').style.display = 'none';
   document.getElementById('results-area').style.display = 'block';
   document.getElementById('transcript-content').textContent = transcript;
-
-  const tEl = document.getElementById('topics-content');
-  tEl.innerHTML = '';
-  (research.topics||[]).forEach(t => {
-    tEl.innerHTML += `<div class="topic-item"><div class="topic-name">${escHtml(t.name)}</div><div class="topic-note">${escHtml(t.note)}</div></div>`;
-  });
-  renderRefList('refs-content', research.references||[]);
-  renderRefList('studies-content', research.studies||[]);
+  document.getElementById('prompt-content').textContent = prompt;
 }
 
-function renderRefList(cid, items) {
-  const el = document.getElementById(cid);
-  el.innerHTML = '';
-  if (!items.length) { el.innerHTML = '<div style="font-size:13px;color:var(--text-dim);text-align:center;padding:16px">Nenhum item encontrado</div>'; return; }
-  items.forEach(item => {
-    const urlHtml = item.url ? `<div class="ref-url">${escHtml(item.url)}</div>` : '';
-    el.innerHTML += `<div class="ref-item" ${item.url?`onclick="openUrl('${escHtml(item.url)}')" style="cursor:pointer"`:''}>
-      <div class="ref-type">${escHtml(item.type||'')}</div>
-      <div class="ref-title">${escHtml(item.title||'')}</div>
-      <div class="ref-desc">${escHtml(item.description||'')}</div>
-      ${urlHtml}</div>`;
+function copyPrompt() {
+  const text = document.getElementById('prompt-content').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = '✓ Copiado!';
+    setTimeout(() => { btn.textContent = '📋 Copiar prompt'; }, 2200);
+  }).catch(() => {
+    // fallback para Android antigo
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = '✓ Copiado!';
+    setTimeout(() => { btn.textContent = '📋 Copiar prompt'; }, 2200);
   });
 }
 
 function openUrl(url) { if (url && url!=='null') window.open(url,'_blank'); }
+
+async function copyPromptById(id) {
+  const rec = await dbGet(id);
+  if (!rec || !rec.result || !rec.result.prompt) { showToast('Prompt não encontrado'); return; }
+  const text = rec.result.prompt;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+  }
+  showToast('✓ Prompt copiado!');
+}
 
 // ══════════════════════════════════════════════════
 // RESET
