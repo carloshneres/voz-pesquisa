@@ -1131,7 +1131,7 @@ async function transcribeWithGemini(blob, mimeType) {
     ]}],
     generationConfig: { temperature: 0.1 }
   };
-  return geminiRequest('gemini-1.5-flash', body);
+  return geminiRequest('gemini-2.5-flash', body);
 }
 
 async function researchWithGemini(transcript, extraContext) {
@@ -1162,7 +1162,7 @@ Regras: 3–7 tópicos · 4–8 referências reais · 3–6 estudos reais · Pri
     generationConfig: { temperature: 0.4, maxOutputTokens: 4096 }
   };
 
-  const raw = await geminiRequest('gemini-1.5-pro', body);
+  const raw = await geminiRequest('gemini-2.5-pro', body);
   const cleaned = raw.replace(/```json|```/g,'').trim();
   const s = cleaned.indexOf('{'); const e = cleaned.lastIndexOf('}');
   if (s === -1 || e === -1) throw new Error('Resposta do Gemini sem JSON válido');
